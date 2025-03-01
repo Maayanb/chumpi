@@ -257,7 +257,7 @@
             player.y += player.dy;
             player.dy += player.gravity;
 
-            const groundLevel = rect.height - 250; // Updated ground level
+            const groundLevel = rect.height - 150; // Updated ground level
             if (player.y > groundLevel) {
                 player.y = groundLevel;
                 player.dy = 0;
@@ -296,7 +296,7 @@
             cookies = [];
             const rect = canvas.getBoundingClientRect();
             player.x = rect.width / 2;
-            player.y = rect.height - 250; // Updated restart position
+            player.y = rect.height - 150; // Updated restart position
             player.dy = 0;
             player.isJumping = false;
             gameRunning = true;
