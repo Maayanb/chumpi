@@ -30,9 +30,9 @@
             padding: 8px 0;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
+            flex-wrap: wrap;
         }
         h1 {
             margin: 5px 0;
@@ -45,8 +45,8 @@
             font-weight: bold;
         }
         #healthBar {
-            width: 15px;
-            height: 100px;
+            width: 15px; /* Width becomes thickness of vertical bar */
+            height: 100px; /* Height becomes length of vertical bar */
             background-color: lightgray;
             position: absolute;
             top: 8px;
@@ -58,11 +58,11 @@
         }
         #health {
             width: 100%;
-            height: 100%;
+            height: 100%; /* Height will now represent health percentage */
             background-color: green;
-            transition: height 0.3s ease;
+            transition: height 0.3s ease; /* Transition height instead of width */
             position: absolute;
-            bottom: 0;
+            bottom: 0; /* Fill from bottom up */
             left: 0;
         }
         canvas {
@@ -114,7 +114,212 @@
     </div>
     
     <script>
-        // Game logic script
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreDisplay = document.getElementById("score");
+        const healthBar = document.getElementById("health");
+        const restartButton = document.getElementById("restartButton");
+        const touchToJump = document.getElementById("touchToJump");
+        
+        let health = 100;
+        let score = 0;
+        let gameRunning = true;
+        let powerUpActive = false;
+        let gameInitialized = false;
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+        
+        window.addEventListener("resize", resizeCanvas);
+        
+        const slothImage = new Image();
+        slothImage.src = 'https://tse3.mm.bing.net/th?id=OIP.wZX54TSHH67ayJTNR0caaQHaHa&pid=Api';
+        
+        let player = {
+            x: 0,
+            y: 0,
+            size: 60,
+            dy: 0,
+            gravity: 0.5,
+            jumpStrength: -12,
+            image: slothImage,
+            isJumping: false,
+            groundEmoji: "🦥"
+        };
+
+        let cookies = [];
+        
+        function init() {
+            if (gameInitialized) return;
+            gameInitialized = true;
+            resizeCanvas();
+            const rect = canvas.getBoundingClientRect();
+            player.x = rect.width / 2;
+            player.y = rect.height - 250; // Updated initial position
+            update();
+            startCookieGeneration();
+        }
+
+        function updateHealth(amount) {
+            health += amount;
+            if (health > 100) health = 100;
+            if (health <= 0) {
+                health = 0;
+                gameRunning = false;
+                restartButton.style.display = "block";
+                touchToJump.style.display = "none";
+            }
+            healthBar.style.height = health + "%"; // Changed to height
+            healthBar.style.backgroundColor = health > 50 ? "green" : health > 20 ? "orange" : "red";
+        }
+
+        function drawPlayer() {
+            const rect = canvas.getBoundingClientRect();
+            player.size = Math.min(rect.width, rect.height) * 0.15;
+            if (slothImage.complete && player.isJumping) {
+                ctx.drawImage(player.image, 
+                            player.x - player.size / 2, 
+                            player.y - player.size / 2, 
+                            player.size, 
+                            player.size);
+            } else {
+                ctx.font = `${player.size}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(player.groundEmoji, player.x, player.y);
+            }
+        }
+
+        function spawnCookie() {
+            const rect = canvas.getBoundingClientRect();
+            let yPosition = 100 + Math.random() * (rect.height - 400); // Adjusted for new boundary
+            let isPowerUp = Math.random() < 0.1;
+            const speedFactor = rect.width / 400;
+            return { 
+                x: rect.width, 
+                y: yPosition, 
+                speed: (3 + Math.random() * 2) * speedFactor, 
+                hit: false, 
+                powerUp: isPowerUp 
+            };
+        }
+
+        function drawCookies() {
+            const cookieSize = Math.min(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height) * 0.1;
+            ctx.font = `${cookieSize}px Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            cookies.forEach(cookie => {
+                ctx.fillText(cookie.powerUp ? "⭐" : "🍪", cookie.x, cookie.y);
+            });
+        }
+
+        function moveCookies() {
+            if (!gameRunning) return;
+            cookies.forEach(cookie => {
+                cookie.x -= cookie.speed;
+            });
+            cookies = cookies.filter(cookie => cookie.x > -100);
+        }
+
+        function checkCollision() {
+            const cookieSizeApprox = Math.min(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height) * 0.05;
+            for (let i = cookies.length - 1; i >= 0; i--) {
+                const cookie = cookies[i];
+                const distance = Math.hypot(player.x - cookie.x, player.y - cookie.y);
+                if (distance < (player.size / 2 + cookieSizeApprox) && !cookie.hit) {
+                    cookie.hit = true;
+                    score++;
+                    scoreDisplay.textContent = score;
+                    if (cookie.powerUp) {
+                        powerUpActive = true;
+                        updateHealth(20);
+                        setTimeout(() => powerUpActive = false, 5000);
+                    } else {
+                        updateHealth(10);
+                    }
+                    cookies.splice(i, 1);
+                }
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            
+            player.y += player.dy;
+            player.dy += player.gravity;
+
+            const groundLevel = rect.height - 250; // Updated ground level
+            if (player.y > groundLevel) {
+                player.y = groundLevel;
+                player.dy = 0;
+                player.isJumping = false;
+            }
+
+            drawPlayer();
+            moveCookies();
+            drawCookies();
+            checkCollision();
+            updateHealth(-0.1);
+
+            requestAnimationFrame(update);
+        }
+
+        function jump() {
+            if (gameRunning) {
+                player.dy = player.jumpStrength;
+                player.isJumping = true;
+            }
+        }
+
+        function startCookieGeneration() {
+            setInterval(() => {
+                if (!gameRunning) return;
+                cookies.push(spawnCookie());
+            }, 1500);
+        }
+
+        function restartGame() {
+            score = 0;
+            health = 100;
+            scoreDisplay.textContent = "0";
+            healthBar.style.height = "100%"; // Changed to height
+            healthBar.style.backgroundColor = "green";
+            cookies = [];
+            const rect = canvas.getBoundingClientRect();
+            player.x = rect.width / 2;
+            player.y = rect.height - 250; // Updated restart position
+            player.dy = 0;
+            player.isJumping = false;
+            gameRunning = true;
+            restartButton.style.display = "none";
+            touchToJump.style.display = "block";
+            update();
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === " " && gameRunning) jump();
+        });
+        
+        canvas.addEventListener("touchstart", (event) => {
+            event.preventDefault();
+            jump();
+        });
+        
+        canvas.addEventListener("mousedown", () => {
+            jump();
+        });
+        
+        slothImage.onload = init;
+        window.onload = () => setTimeout(init, 1000);
     </script>
 </body>
 </html>
