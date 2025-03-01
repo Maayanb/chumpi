@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chumpi Bounce – Catch the Cookies</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            text-align: center;
+            background-color: white;
+            color: black;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            touch-action: manipulation;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #gameInfo {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 10;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 8px 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin: 5px 0;
+            font-size: 24px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        p {
+            margin: 5px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #healthBar {
+            width: 200px;
+            height: 20px;
+            background-color: lightgray;
+            position: absolute;
+            top: 50px; /* Moved down to be below game info */
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 15; /* Increased z-index to ensure visibility */
+        }
+        #health {
+            width: 100%;
+            height: 100%;
+            background-color: green;
+            transition: width 0.3s ease;
+        }
+        canvas {
+            background-color: white;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5; /* Lower z-index than UI elements */
+        }
+        #restartButton {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            z-index: 20;
+        }
+        #touchToJump {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 18px;
+            color: rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="gameInfo">
+            <h1>Chumpi Bounce</h1>
+            <p>Catch cookies! 🍪 Score: <span id="score">0</span></p>
+        </div>
+        <div id="healthBar"><div id="health"></div></div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="touchToJump">Tap anywhere to jump</div>
+        <button id="restartButton" onclick="restartGame()">Play Again?</button>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreDisplay = document.getElementById("score");
+        const healthBar = document.getElementById("health");
+        const restartButton = document.getElementById("restartButton");
+        const touchToJump = document.getElementById("touchToJump");
+        
+        let health = 100;
+        let score = 0;
+        let gameRunning = true;
+        let powerUpActive = false;
+        let gameInitialized = false;
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+        
+        window.addEventListener("resize", resizeCanvas);
+        
+        const slothImage = new Image();
+        slothImage.src = 'https://tse3.mm.bing.net/th?id=OIP.wZX54TSHH67ayJTNR0caaQHaHa&pid=Api';
+        
+        let player = {
+            x: 0,
+            y: 0,
+            size: 60,
+            dy: 0,
+            gravity: 0.5,
+            jumpStrength: -12,
+            image: slothImage,
+            isJumping: false,
+            groundEmoji: "🦥"
+        };
+
+        let cookies = [];
+        
+        function init() {
+            if (gameInitialized) return;
+            gameInitialized = true;
+            resizeCanvas();
+            const rect = canvas.getBoundingClientRect();
+            player.x = rect.width / 2;
+            player.y = rect.height - 80;
+            update();
+            startCookieGeneration();
+        }
+
+        function updateHealth(amount) {
+            health += amount;
+            if (health > 100) health = 100;
+            if (health <= 0) {
+                health = 0;
+                gameRunning = false;
+                restartButton.style.display = "block";
+                touchToJump.style.display = "none";
+            }
+            healthBar.style.width = health + "%";
+            healthBar.style.backgroundColor = health > 50 ? "green" : health > 20 ? "orange" : "red";
+        }
+
+        function drawPlayer() {
+            const rect = canvas.getBoundingClientRect();
+            player.size = Math.min(rect.width, rect.height) * 0.15;
+            if (slothImage.complete && player.isJumping) {
+                ctx.drawImage(player.image, 
+                            player.x - player.size / 2, 
+                            player.y - player.size / 2, 
+                            player.size, 
+                            player.size);
+            } else {
+                ctx.font = `${player.size}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(player.groundEmoji, player.x, player.y);
+            }
+        }
+
+        function spawnCookie() {
+            const rect = canvas.getBoundingClientRect();
+            let yPosition = 100 + Math.random() * (rect.height - 250);
+            let isPowerUp = Math.random() < 0.1;
+            const speedFactor = rect.width / 400;
+            return { 
+                x: rect.width, 
+                y: yPosition, 
+                speed: (3 + Math.random() * 2) * speedFactor, 
+                hit: false, 
+                powerUp: isPowerUp 
+            };
+        }
+
+        function drawCookies() {
+            const cookieSize = Math.min(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height) * 0.1;
+            ctx.font = `${cookieSize}px Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            cookies.forEach(cookie => {
+                ctx.fillText(cookie.powerUp ? "⭐" : "🍪", cookie.x, cookie.y);
+            });
+        }
+
+        function moveCookies() {
+            if (!gameRunning) return;
+            cookies.forEach(cookie => {
+                cookie.x -= cookie.speed;
+            });
+            cookies = cookies.filter(cookie => cookie.x > -100);
+        }
+
+        function checkCollision() {
+            const cookieSizeApprox = Math.min(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height) * 0.05;
+            for (let i = cookies.length - 1; i >= 0; i--) {
+                const cookie = cookies[i];
+                const distance = Math.hypot(player.x - cookie.x, player.y - cookie.y);
+                if (distance < (player.size / 2 + cookieSizeApprox) && !cookie.hit) {
+                    cookie.hit = true;
+                    score++;
+                    scoreDisplay.textContent = score;
+                    if (cookie.powerUp) {
+                        powerUpActive = true;
+                        updateHealth(20);
+                        setTimeout(() => powerUpActive = false, 5000);
+                    } else {
+                        updateHealth(10);
+                    }
+                    cookies.splice(i, 1);
+                }
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            
+            player.y += player.dy;
+            player.dy += player.gravity;
+
+            const groundLevel = rect.height - 80;
+            if (player.y > groundLevel) {
+                player.y = groundLevel;
+                player.dy = 0;
+                player.isJumping = false;
+            }
+
+            drawPlayer();
+            moveCookies();
+            drawCookies();
+            checkCollision();
+            updateHealth(-0.1);
+
+            requestAnimationFrame(update);
+        }
+
+        function jump() {
+            if (gameRunning) {
+                player.dy = player.jumpStrength;
+                player.isJumping = true;
+            }
+        }
+
+        function startCookieGeneration() {
+            setInterval(() => {
+                if (!gameRunning) return;
+                cookies.push(spawnCookie());
+            }, 1500);
+        }
+
+        function restartGame() {
+            score = 0;
+            health = 100;
+            scoreDisplay.textContent = "0";
+            healthBar.style.width = "100%";
+            healthBar.style.backgroundColor = "green";
+            cookies = [];
+            const rect = canvas.getBoundingClientRect();
+            player.x = rect.width / 2;
+            player.y = rect.height - 80;
+            player.dy = 0;
+            player.isJumping = false;
+            gameRunning = true;
+            restartButton.style.display = "none";
+            touchToJump.style.display = "block";
+            update();
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === " " && gameRunning) jump();
+        });
+        
+        canvas.addEventListener("touchstart", (event) => {
+            event.preventDefault();
+            jump();
+        });
+        
+        canvas.addEventListener("mousedown", () => {
+            jump();
+        });
+        
+        slothImage.onload = init;
+        window.onload = () => setTimeout(init, 1000);
+    </script>
+</body>
+</html>
